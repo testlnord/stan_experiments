@@ -51,7 +51,7 @@ real<lower=0> sigma;      // Error scale
 
 model {                     // Model block
 vector[N] mu;
-mu <- X * beta;           // Creation of linear predictor
+mu = X * beta;           // Creation of linear predictor
 
 // priors
 beta ~ normal(0, 10);

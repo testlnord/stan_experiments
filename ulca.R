@@ -1,25 +1,25 @@
-# my attempt to simmulate unrestricted LCA
+# my attempt to simmulate unrestricted LC
 
 # let's generate some data
 # we have two classes: c1 and c2, and 50 people from each class
 # people from these classes answers yes/no question. For simlicity let's take two questions: q1, q2
 
 # c1 answers
-q1.c1 = rbinom(50, 1, 0.3)
-q2.c1 = rbinom(50, 1, 0.6)
+q1.c1 = rbinom(120, 1, 0.1)
+q2.c1 = rbinom(120, 1, 0.9)
 
 # c2 answers
-q1.c2 = rbinom(50, 1, 0.8)
-q2.c2 = rbinom(50, 1, 0.2)
+q1.c2 = rbinom(80, 1, 0.9)
+q2.c2 = rbinom(80, 1, 0.1)
 
 # here ^ people from c1 tend to choose `yes` as second answer 
 
 stan_data <- list(
-  N = 100,
+  N = 200,
   Q = 2,
   C = 2,
-  X = t(cbind(rbind(q1.c1, q1.c2), rbind(q2.c1, q2.c2))),
-  class_priors_probs = c(0.5, 0.5)
+  X = cbind(c(q1.c1, q1.c2), c(q2.c1, q2.c2))
+  #class_priors_probs = c(3, 3)
 )
 # Create the stan model object using Stan's syntax
 stanmodelcode = "
@@ -28,7 +28,7 @@ int<lower=1> N;           // Number of people
 int<lower=2> C;           // Number of classes
 int<lower=2> Q;           // Number of questions
 vector<lower=0, upper=1>[Q] X[N];           // Answers 
-vector<lower=0>[Q] class_priors_probs; 
+
 }
 
 
@@ -42,35 +42,44 @@ for (n in 1:N){
 
 
 parameters {                // Parameters block
-  vector[Q] pi[C];           // Question log probabilities for classes
-  vector[C] classes_weights_pars;      // Vector of class proportions parameters
+  simplex[Q] pi[C];           // Question probabilities for classes
+  simplex[C] classes_weights;      // Vector of class proportions parameters
+  simplex[C] class_probs[N];   // probability of person belongs to class
+  //vector<lower=0>[Q] class_priors_probs; 
+}
 
-}
-transformed parameters{
-  vector[Q] log_pi[C];           // Question log probabilities for classes
-  
-  log_pi = log(pi);
-  
-}
 
 model {                     // Model block
-  //prior
-  vector[C] classes_weights;      // Vector of class proportions
-  classes_weights ~ dirichlet(classes_weights_pars);
+ // priors
+  //vector[Q] pi[C];
+  vector[Q] log_pi[C];
+  vector[Q] log_1m_pi[C];
 
+  //for (c in 1:C){
+  //    pi[c] ~ dirichlet(class_priors_probs);
+  //}  
+
+    
+  for (c in 1:C){
+    log_pi[c] = log(pi[c]);
+    log_1m_pi[c] = log(1-pi[c]);
+  }  
+  
  //model
   for (n in 1:N){ // for people
     real ans_by_class[C];
     for (c in 1:C){ // for classes
-        ans_by_class[c] = sum(classes_weights[c]*(log_pi[c].*X[n] + log1m_exp(log_pi[c]).*(invX[n])));
+        ans_by_class[c] = log(classes_weights[c]) + sum(log_pi[c].*X[n] + log_1m_pi[c].*invX[n]);
     } 
-    increment_log_prob(log_sum_exp(ans_by_class));
+    target += log_sum_exp(ans_by_class);
   }
 
 }
 
 /*
 generated quantities {      // Generated quantities block. Not used presently.
+  
+
 }
 */
 "
@@ -78,4 +87,4 @@ library(rstan)
 
 ### Run the model and examine results ###
 fit = stan(model_code=stanmodelcode, data=stan_data, iter=12000, 
-           warmup=2000, thin=10, chains=3)
+           warmup=2000, thin=10, chains=3, control=list(adapt_delta=0.9))
